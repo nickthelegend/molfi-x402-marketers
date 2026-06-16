@@ -2,26 +2,38 @@
 
 import React, { useEffect, useState, use } from 'react';
 import { useMarketerStore } from '../../../../store/marketerStore';
-import { fetchCampaign, fetchImpressions } from '../../../../lib/api';
-import { ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import { fetchCampaign, fetchImpressions, toggleCampaign } from '../../../../lib/api';
+import { ArrowLeft, CheckCircle2, AlertCircle, Play, Pause, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
 interface CampaignData {
   _id: string;
-  mp4Url: string;
+  title: string;
+  type: 'video' | 'image';
+  creativeUrl: string;
   bidPerViewUsdc: string;
   budgetUsdc: string;
   spentUsdc: string;
-  status: 'active' | 'paused' | 'depleted';
+  status: 'pending_review' | 'active' | 'paused' | 'depleted' | 'rejected';
+  rejectionReason?: string;
   ctaUrl: string;
+  targeting: {
+    surfaces: string[];
+    modelHints?: string[];
+  };
   createdAt: string;
 }
 
 interface ImpressionData {
   _id: string;
   viewerSessionHash: string;
-  watchedMs: number;
-  completedAt: string;
+  surface: 'frontend' | 'extension';
+  type: 'video' | 'image';
+  durationMs: number;
+  startedAt: string;
+  completedAt?: string;
+  status: 'pending' | 'claimed' | 'rejected';
+  bidPaidUsdc: string;
   batchId?: number;
   settlementTxHash?: string;
 }
@@ -33,6 +45,7 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
   const [impressions, setImpressions] = useState<ImpressionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const loadData = async () => {
     if (!token) return;
@@ -55,9 +68,23 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
     loadData();
   }, [token, params.id]);
 
+  const handleToggleStatus = async (newStatus: 'active' | 'paused') => {
+    if (!token || !campaign) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const updated = await toggleCampaign(token, campaign._id, newStatus);
+      setCampaign(updated);
+    } catch (err) {
+      setError((err as Error).message || 'Failed to update campaign status');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-xs font-mono text-text-muted">
+      <div className="flex items-center justify-center h-[50vh] text-xs font-mono text-zinc-500">
         Loading campaign details...
       </div>
     );
@@ -65,7 +92,7 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
 
   if (!campaign) {
     return (
-      <div className="max-w-xl mx-auto p-4 text-center text-xs text-text-muted font-mono">
+      <div className="max-w-xl mx-auto p-8 text-center text-xs text-zinc-500 font-mono">
         ⚠️ Campaign not found.
       </div>
     );
@@ -75,26 +102,81 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
   const spent = parseFloat(campaign.spentUsdc);
   const progressPercent = Math.min((spent / budget) * 100, 100);
 
+  // Group impressions by date for the analytics chart
+  const dateCounts: Record<string, number> = {};
+  impressions.forEach((imp) => {
+    if (imp.completedAt || imp.startedAt) {
+      const dateStr = new Date(imp.completedAt || imp.startedAt).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      });
+      dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
+    }
+  });
+
+  const chartData = Object.entries(dateCounts).map(([date, count]) => ({ date, count })).reverse();
+  const maxChartVal = Math.max(...chartData.map((d) => d.count), 1);
+
   return (
     <div className="flex flex-col gap-8 max-w-6xl mx-auto">
+      
       {/* Back button */}
       <div>
         <Link
           href="/dashboard/campaigns"
-          className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text transition-all font-semibold"
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-all font-semibold"
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Back to Campaigns
         </Link>
       </div>
 
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-text headline">Campaign Details</h2>
-        <span className="text-xs font-mono text-text-dim block mt-0.5">{campaign._id}</span>
+      {/* Header with toggle controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white headline">{campaign.title || 'Campaign Details'}</h2>
+          <span className="text-xs font-mono text-zinc-500 block mt-0.5">{campaign._id}</span>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex items-center gap-3">
+          <span
+            className={`inline-block rounded px-2.5 py-1 text-[10px] font-bold uppercase ${
+              campaign.status === 'active'
+                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                : campaign.status === 'pending_review'
+                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+            }`}
+          >
+            {campaign.status.replace('_', ' ')}
+          </span>
+
+          {(campaign.status === 'active' || campaign.status === 'paused') && (
+            <button
+              onClick={() => handleToggleStatus(campaign.status === 'active' ? 'paused' : 'active')}
+              disabled={actionLoading}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all disabled:opacity-50 ${
+                campaign.status === 'active'
+                  ? 'bg-amber-600/20 text-amber-400 hover:bg-amber-600/30'
+                  : 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30'
+              }`}
+            >
+              {campaign.status === 'active' ? (
+                <>
+                  <Pause className="h-3.5 w-3.5" /> Pause
+                </>
+              ) : (
+                <>
+                  <Play className="h-3.5 w-3.5" /> Resume
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
-        <div className="text-xs text-danger rounded-lg border border-danger/20 bg-danger/5 p-3 font-semibold">
+        <div className="text-xs text-red-400 rounded-lg border border-red-500/20 bg-red-500/10 p-4">
           ⚠️ {error}
         </div>
       )}
@@ -102,61 +184,61 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
       {/* Grid: Stats & Info */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Card 1: Budget details */}
-        <div className="md:col-span-2 glass p-6 rounded-xl border border-border flex flex-col justify-between">
+        {/* Funding Performance */}
+        <div className="md:col-span-2 glass p-6 rounded-xl border border-zinc-800 flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-text mb-4 headline">Funding Performance</h3>
+            <h3 className="text-sm font-bold text-white mb-4 headline">Funding Performance</h3>
             <div className="flex justify-between items-baseline mb-2">
-              <span className="text-xs text-text-muted">Spent Progress</span>
-              <span className="text-xs font-mono text-text font-bold">
+              <span className="text-xs text-zinc-400">Spent Progress</span>
+              <span className="text-xs font-mono text-white font-bold">
                 {spent.toFixed(3)} / {budget.toFixed(2)} USDC ({progressPercent.toFixed(1)}%)
               </span>
             </div>
-            <div className="h-2 w-full bg-border rounded-full overflow-hidden mb-4">
+            <div className="h-2 w-full bg-zinc-900 rounded-full overflow-hidden mb-4">
               <div
-                className="h-full bg-accent transition-all duration-300"
+                className="h-full bg-purple-500 transition-all duration-300"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 border-t border-border pt-4">
+          <div className="grid grid-cols-3 gap-4 border-t border-zinc-800 pt-4">
             <div>
-              <span className="text-[9px] uppercase font-bold text-text-dim">Bid / View</span>
-              <div className="text-sm font-mono font-bold text-accent-2 mt-0.5">
-                {parseFloat(campaign.bidPerViewUsdc).toFixed(3)} USDC
+              <span className="text-[9px] uppercase font-bold text-zinc-500">Bid / View</span>
+              <div className="text-sm font-mono font-bold text-purple-400 mt-0.5">
+                {parseFloat(campaign.bidPerViewUsdc).toFixed(4)} USDC
               </div>
             </div>
             <div>
-              <span className="text-[9px] uppercase font-bold text-text-dim">Frequency Cap</span>
-              <div className="text-sm font-mono font-bold text-text mt-0.5">No Cap</div>
+              <span className="text-[9px] uppercase font-bold text-zinc-500">Impressions</span>
+              <div className="text-sm font-mono font-bold text-white mt-0.5">
+                {impressions.filter(i => i.status === 'claimed').length}
+              </div>
+            </div>
+            <div>
+              <span className="text-[9px] uppercase font-bold text-zinc-500">Placements</span>
+              <div className="text-sm font-semibold text-zinc-400 mt-0.5 capitalize">
+                {campaign.targeting.surfaces.join(', ')}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Status & Video details */}
-        <div className="glass p-6 rounded-xl border border-border flex flex-col justify-between">
+        {/* Media sources */}
+        <div className="glass p-6 rounded-xl border border-zinc-800 flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-text mb-3 headline">Campaign Status</h3>
-            <span
-              className={`inline-block rounded px-2.5 py-0.5 text-[9px] font-bold uppercase mb-4 ${
-                campaign.status === 'active'
-                  ? 'bg-success/10 text-success border border-success/20'
-                  : 'bg-danger/10 text-danger border border-danger/20'
-              }`}
-            >
-              {campaign.status}
-            </span>
-          </div>
-          <div className="border-t border-border pt-4 text-[10px] text-text-muted flex flex-col gap-1.5 font-mono">
-            <div className="truncate">
-              <span className="text-text-dim">Video:</span>{' '}
-              <a href={campaign.mp4Url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-                MP4 Source ↗
-              </a>
+            <h3 className="text-sm font-bold text-white mb-3 headline">Creative Resource</h3>
+            <div className="aspect-video w-full rounded overflow-hidden bg-black border border-zinc-800 flex items-center justify-center mb-3">
+              {campaign.type === 'video' ? (
+                <video src={campaign.creativeUrl} muted controls={false} className="h-full w-full object-contain" />
+              ) : (
+                <img src={campaign.creativeUrl} alt="Ad Placement" className="h-full w-full object-contain" />
+              )}
             </div>
+          </div>
+          <div className="border-t border-zinc-800 pt-3 text-[10px] text-zinc-400 flex flex-col gap-1 font-mono">
             <div className="truncate">
-              <span className="text-text-dim">Destination:</span>{' '}
-              <a href={campaign.ctaUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+              <span className="text-zinc-500">CTA:</span>{' '}
+              <a href={campaign.ctaUrl} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
                 {campaign.ctaUrl} ↗
               </a>
             </div>
@@ -165,57 +247,82 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
 
       </div>
 
-      {/* Impressions Table list */}
+      {/* Analytics Chart */}
+      {chartData.length > 0 && (
+        <div className="glass p-6 rounded-xl border border-zinc-800">
+          <h3 className="text-sm font-bold text-white mb-6 headline">Impressions Over Time</h3>
+          <div className="h-32 w-full flex items-end gap-2 px-2 border-b border-zinc-800 pb-1">
+            {chartData.map((d, i) => {
+              const hPct = (d.count / maxChartVal) * 100;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+                  <div
+                    className="w-full bg-purple-500/20 group-hover:bg-purple-500/40 border-t border-purple-500 rounded-t transition-all"
+                    style={{ height: `${hPct}%` }}
+                  />
+                  <div className="absolute -top-7 bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-[10px] font-mono text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    {d.count}
+                  </div>
+                  <span className="text-[9px] font-mono text-zinc-500 whitespace-nowrap mt-1">{d.date}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Impressions Log Table */}
       <div className="flex flex-col gap-4">
-        <h3 className="text-sm font-bold text-text headline">Impressions Log</h3>
+        <h3 className="text-sm font-bold text-white headline">Impressions Log</h3>
         
         {impressions.length === 0 ? (
-          <div className="p-8 border border-border bg-surface rounded-xl text-center text-xs text-text-muted font-mono">
+          <div className="p-8 border border-zinc-850 bg-zinc-950 rounded-xl text-center text-xs text-zinc-500 font-mono">
             No impressions logged yet. Watch ads on main UI to generate records.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-2xl">
+          <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl">
             <table className="w-full border-collapse text-left text-xs">
               <thead>
-                <tr className="border-b border-border bg-surface-2">
-                  <th className="p-4 font-bold text-text">Impression ID</th>
-                  <th className="p-4 font-bold text-text">Viewer Session</th>
-                  <th className="p-4 font-bold text-text">Duration</th>
-                  <th className="p-4 font-bold text-text">On-Chain Anchor</th>
-                  <th className="p-4 font-bold text-text">Actions</th>
+                <tr className="border-b border-zinc-800 bg-zinc-900/50">
+                  <th className="p-4 font-bold text-zinc-400">Time</th>
+                  <th className="p-4 font-bold text-zinc-400">Viewer Hash</th>
+                  <th className="p-4 font-bold text-zinc-400">Surface</th>
+                  <th className="p-4 font-bold text-zinc-400">Dwell (ms)</th>
+                  <th className="p-4 font-bold text-zinc-400">Status</th>
+                  <th className="p-4 font-bold text-zinc-400">On-Chain Audit</th>
                 </tr>
               </thead>
               <tbody>
                 {impressions.map((imp) => {
                   const isAnchored = imp.batchId !== undefined;
+                  const dateStr = new Date(imp.completedAt || imp.startedAt).toLocaleString();
                   return (
-                    <tr key={imp._id} className="border-b border-border/40 hover:bg-surface-2/30 transition-all font-mono">
-                      <td className="p-4 font-semibold text-text select-all" title={imp._id}>
-                        {imp._id.slice(0, 8)}...{imp._id.slice(-6)}
-                      </td>
-                      <td className="p-4 text-text-muted truncate max-w-[120px]" title={imp.viewerSessionHash}>
+                    <tr key={imp._id} className="border-b border-zinc-900 hover:bg-zinc-900/20 transition-all font-mono">
+                      <td className="p-4 text-zinc-400">{dateStr}</td>
+                      <td className="p-4 text-zinc-300 font-semibold truncate max-w-[120px]" title={imp.viewerSessionHash}>
                         {imp.viewerSessionHash.slice(0, 10)}...
                       </td>
-                      <td className="p-4">{(imp.watchedMs / 1000).toFixed(1)}s</td>
+                      <td className="p-4 capitalize text-zinc-300">{imp.surface}</td>
+                      <td className="p-4 text-zinc-300">{imp.durationMs}ms</td>
                       <td className="p-4">
-                        {isAnchored ? (
-                          <div className="flex items-center gap-1.5 text-success">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            <span>Batch #{imp.batchId}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-warning">
-                            <AlertCircle className="h-3.5 w-3.5" />
-                            <span>Pending Anchor</span>
-                          </div>
-                        )}
+                        <span className={`inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase ${
+                          imp.status === 'claimed'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : imp.status === 'rejected'
+                            ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                            : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                        }`}>
+                          {imp.status}
+                        </span>
                       </td>
-                      <td className="p-4 font-sans font-semibold">
+                      <td className="p-4">
                         <Link
                           href={`/verify/${imp._id}`}
-                          className="text-accent hover:text-accent-2 hover:underline transition-all"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-purple-400 hover:text-purple-300 hover:underline transition-all flex items-center gap-1"
                         >
-                          Audit Proof
+                          Verify Proof <ExternalLink className="h-3 w-3" />
                         </Link>
                       </td>
                     </tr>

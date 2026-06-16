@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMarketerStore } from '../../../store/marketerStore';
-import { apiRequest, withdrawBalance } from '../../../lib/api';
+import { apiRequest, withdrawBalance, fetchLedger } from '../../../lib/api';
 import { useWalletClient, useAccount } from 'wagmi';
 import { useTxModal } from '../../../components/tx/TxModalProvider';
 import { keccak256, stringToHex } from 'viem';
-import { Coins, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Coins, ArrowUpRight, ArrowDownLeft, ExternalLink, Calendar } from 'lucide-react';
 
 export default function Billing() {
   const { token, balanceUsdc, setBalance } = useMarketerStore();
@@ -21,6 +21,26 @@ export default function Billing() {
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  
+  const [ledger, setLedger] = useState<any[]>([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+
+  const loadLedger = async () => {
+    if (!token) return;
+    setLedgerLoading(true);
+    try {
+      const res = await fetchLedger(token);
+      setLedger(res.ledger || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLedger();
+  }, [token]);
 
   const handleTopup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,6 +157,7 @@ export default function Billing() {
       });
 
       setSuccess(`Deposit of ${amount.toFixed(2)} USDC successfully submitted on-chain!`);
+      loadLedger();
     } catch (err) {
       console.error(err);
       setError((err as Error).message || 'Top-up transaction failed.');
@@ -173,6 +194,7 @@ export default function Billing() {
       });
 
       setSuccess(`Withdrawal of ${amount.toFixed(2)} USDC successfully completed on-chain!`);
+      loadLedger();
     } catch (err) {
       console.error(err);
       setError((err as Error).message || 'Withdrawal failed.');
@@ -279,6 +301,57 @@ export default function Billing() {
           </form>
         </div>
 
+      </div>
+
+      {/* Ledger Table */}
+      <div className="flex flex-col gap-4 mt-6">
+        <h3 className="text-sm font-bold text-text headline flex items-center gap-1.5">
+          <Calendar className="h-4 w-4 text-accent" /> Billing Ledger & Settlement Audit
+        </h3>
+        
+        {ledgerLoading ? (
+          <div className="text-xs font-mono text-text-muted py-6">Loading transaction history...</div>
+        ) : ledger.length === 0 ? (
+          <div className="p-8 border border-border bg-surface rounded-xl text-center text-xs text-text-muted font-mono">
+            No billing transactions logged. Complete deposits or watch impressions to generate history.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-2xl">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-border bg-surface-2">
+                  <th className="p-4 font-bold text-text">Time</th>
+                  <th className="p-4 font-bold text-text">Type</th>
+                  <th className="p-4 font-bold text-text">Amount</th>
+                  <th className="p-4 font-bold text-text">Batch Anchor Transaction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger.map((item, idx) => (
+                  <tr key={idx} className="border-b border-border/40 hover:bg-surface-2/30 transition-all font-mono">
+                    <td className="p-4 text-text-muted">{new Date(item.timestamp).toLocaleString()}</td>
+                    <td className="p-4 text-text font-semibold capitalize">{item.type.replace('_', ' ')}</td>
+                    <td className="p-4 text-accent-2 font-bold font-mono">-{item.amountUsdc} USDC</td>
+                    <td className="p-4">
+                      {item.txHash ? (
+                        <a
+                          href={item.explorerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:text-accent-2 hover:underline transition-all flex items-center gap-1"
+                        >
+                          {item.txHash.slice(0, 8)}...{item.txHash.slice(-6)} <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="text-text-dim">-</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
     </div>
