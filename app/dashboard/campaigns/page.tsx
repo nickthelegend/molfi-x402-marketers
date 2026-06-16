@@ -8,11 +8,13 @@ import { Megaphone, Plus } from 'lucide-react';
 
 interface CampaignData {
   _id: string;
-  mp4Url: string;
-  bidPerViewUsdc: string;
-  budgetUsdc: string;
-  spentUsdc: string;
-  status: 'active' | 'paused' | 'depleted';
+  onchainId: number;
+  title: string;
+  kind: 'TEXT' | 'IMAGE' | 'VIDEO';
+  rewardPerImpression: string;
+  budgetRemaining: string;
+  active: boolean;
+  contentURI: string;
   createdAt: string;
 }
 
@@ -58,7 +60,7 @@ export default function CampaignsList() {
         </div>
         <Link
           href="/dashboard/campaigns/new"
-          className="pill-accent px-5 py-2.5 text-xs font-bold transition-all hover:scale-105 hover:brightness-110 flex items-center gap-1.5 uppercase shadow-lg shadow-accent/20"
+          className="pill-accent px-5 py-2.5 text-xs font-bold transition-all hover:scale-105 hover:brightness-110 flex items-center gap-1.5 uppercase shadow-lg shadow-accent/20 bg-purple-600 text-white rounded-lg"
         >
           <Plus className="h-4 w-4" /> New Campaign
         </Link>
@@ -71,7 +73,7 @@ export default function CampaignsList() {
       )}
 
       {campaigns.length === 0 ? (
-        <div className="flex flex-col items-center justify-center border border-border bg-surface rounded-xl p-12 text-center">
+        <div className="flex flex-col items-center justify-center border border-border bg-surface rounded-xl p-12 text-center bg-zinc-950/20">
           <Megaphone className="h-10 w-10 text-text-dim mb-4" />
           <h3 className="text-lg font-bold text-text headline">No Campaigns Found</h3>
           <p className="text-xs text-text-muted max-w-xs mx-auto mt-2 leading-relaxed">
@@ -79,56 +81,66 @@ export default function CampaignsList() {
           </p>
           <Link
             href="/dashboard/campaigns/new"
-            className="mt-6 inline-block pill-accent px-6 py-2.5 text-xs font-bold uppercase transition-all hover:scale-105"
+            className="mt-6 inline-block pill-accent px-6 py-2.5 text-xs font-bold uppercase transition-all hover:scale-105 bg-purple-600 text-white rounded-lg"
           >
             Create First Campaign
           </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-2xl">
+        <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-2xl bg-zinc-950/10">
           <table className="w-full border-collapse text-left text-xs">
             <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="p-4 font-bold text-text">Campaign ID</th>
+              <tr className="border-b border-border bg-surface-2 bg-zinc-950/40">
+                <th className="p-4 font-bold text-text">On-chain ID</th>
+                <th className="p-4 font-bold text-text">Campaign Title</th>
+                <th className="p-4 font-bold text-text">Type</th>
                 <th className="p-4 font-bold text-text">Status</th>
                 <th className="p-4 font-bold text-text">Bid / View</th>
-                <th className="p-4 font-bold text-text">Budget</th>
-                <th className="p-4 font-bold text-text">Spent</th>
+                <th className="p-4 font-bold text-text">Escrow Remaining</th>
                 <th className="p-4 font-bold text-text">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {campaigns.map((c) => (
-                <tr key={c._id} className="border-b border-border/40 hover:bg-surface-2/30 transition-all font-mono">
-                  <td className="p-4 font-semibold text-text select-all" title={c._id}>
-                    {c._id.slice(0, 8)}...{c._id.slice(-6)}
-                  </td>
-                  <td className="p-4">
-                    <span
-                      className={`inline-block rounded px-2.5 py-0.5 text-[9px] font-bold uppercase ${
-                        c.status === 'active'
-                          ? 'bg-success/10 text-success border border-success/20'
-                          : c.status === 'depleted'
-                          ? 'bg-danger/10 text-danger border border-danger/20'
-                          : 'bg-warning/10 text-warning border border-warning/20'
-                      }`}
-                    >
-                      {c.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-accent-2">{parseFloat(c.bidPerViewUsdc).toFixed(3)} USDC</td>
-                  <td className="p-4 text-text">{parseFloat(c.budgetUsdc).toFixed(2)} USDC</td>
-                  <td className="p-4 text-text-muted">{parseFloat(c.spentUsdc).toFixed(3)} USDC</td>
-                  <td className="p-4 font-sans font-semibold">
-                    <Link
-                      href={`/dashboard/campaigns/${c._id}`}
-                      className="text-accent hover:text-accent-2 hover:underline transition-all"
-                    >
-                      View Analytics
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {campaigns.map((c) => {
+                const bid = parseFloat(c.rewardPerImpression) / 1e6;
+                const budget = parseFloat(c.budgetRemaining) / 1e6;
+                return (
+                  <tr key={c._id} className="border-b border-border/40 hover:bg-surface-2/30 transition-all font-mono">
+                    <td className="p-4 font-bold text-purple-400 select-all">
+                      #{c.onchainId}
+                    </td>
+                    <td className="p-4 font-semibold text-text font-sans">
+                      {c.title || `Campaign #${c.onchainId}`}
+                    </td>
+                    <td className="p-4">
+                      <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold bg-zinc-800 text-zinc-300 border border-zinc-700">
+                        {c.kind}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <span
+                        className={`inline-block rounded px-2.5 py-0.5 text-[9px] font-bold uppercase ${
+                          c.active
+                            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                            : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                        }`}
+                      >
+                        {c.active ? 'Active' : 'Closed'}
+                      </span>
+                    </td>
+                    <td className="p-4 text-accent-2 text-text font-semibold">{bid.toFixed(4)} USDC</td>
+                    <td className="p-4 text-text">{budget.toFixed(2)} USDC</td>
+                    <td className="p-4 font-sans font-semibold">
+                      <Link
+                        href={`/dashboard/campaigns/${c._id}`}
+                        className="text-purple-400 hover:text-purple-300 hover:underline transition-all"
+                      >
+                        View Analytics
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

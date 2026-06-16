@@ -188,3 +188,55 @@ export async function fetchAdminStats(token: string) {
   if (!res.ok) throw new Error('Failed to fetch admin stats');
   return await res.json();
 }
+
+// AD ECONOMY APIS (v0.2)
+export async function uploadCreative(token: string, file: File, type: 'video' | 'image') {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${backendUrl}/v1/marketers/upload/${type}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(err.error);
+  }
+  return await res.json() as {
+    cid: string;
+    cidHash: `0x${string}`;
+    bytes: number;
+    mime: string;
+    url: string;
+    durationMs?: number;
+    thumbnailCid?: string;
+    thumbnailUrl?: string;
+  };
+}
+
+export async function syncCampaignMetadata(token: string, data: {
+  onchainId: number;
+  title: string;
+  description?: string;
+  ctaText?: string;
+  ctaUrl: string;
+  targeting: {
+    surfaces: ('chat-web' | 'extension')[];
+    models?: string[];
+  };
+  thumbnailCid?: string;
+  durationMs?: number;
+  contentCid: string;
+}) {
+  const res = await apiRequest('/v1/marketers/campaigns/metadata', 'POST', data, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Metadata synchronization failed' }));
+    throw new Error(err.error);
+  }
+  return await res.json();
+}
+
