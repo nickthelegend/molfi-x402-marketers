@@ -46,7 +46,7 @@ export default function MarketersLanding() {
             Start Advertising <ArrowRight className="h-4 w-4" />
           </a>
           <a
-            href="http://localhost:3000"
+            href="https://app.molfi.fun"
             className="w-full sm:w-auto rounded-full border border-border bg-surface px-8 py-4 text-sm font-semibold text-text hover:border-accent hover:bg-surface-2 transition-all text-center cursor-pointer"
           >
             View Main Chat UI
