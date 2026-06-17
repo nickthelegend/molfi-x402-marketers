@@ -32,7 +32,7 @@ interface ImpressionData {
   durationMs: number;
   startedAt: string;
   completedAt?: string;
-  status: 'pending' | 'claimed' | 'rejected';
+  status: 'pending' | 'claimed' | 'rejected' | 'anchored';
   bidPaidUsdc: string;
   batchId?: number;
   settlementTxHash?: string;
@@ -105,12 +105,15 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
   // Group impressions by date for the analytics chart
   const dateCounts: Record<string, number> = {};
   impressions.forEach((imp) => {
-    if (imp.completedAt || imp.startedAt) {
-      const dateStr = new Date(imp.completedAt || imp.startedAt).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-      });
-      dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
+    const statusLower = imp.status.toLowerCase();
+    if (statusLower === 'claimed' || statusLower === 'anchored') {
+      if (imp.completedAt || imp.startedAt) {
+        const dateStr = new Date(imp.completedAt || imp.startedAt).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        });
+        dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
+      }
     }
   });
 
@@ -211,7 +214,7 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
             <div>
               <span className="text-[9px] uppercase font-bold text-zinc-500">Impressions</span>
               <div className="text-sm font-mono font-bold text-white mt-0.5">
-                {impressions.filter(i => i.status === 'claimed').length}
+                {impressions.filter(i => ['claimed', 'anchored'].includes(i.status.toLowerCase())).length}
               </div>
             </div>
             <div>
@@ -255,7 +258,7 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
             {chartData.map((d, i) => {
               const hPct = (d.count / maxChartVal) * 100;
               return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+                <div key={i} className="flex-1 h-24 flex flex-col justify-end items-center gap-1 group relative">
                   <div
                     className="w-full bg-purple-500/20 group-hover:bg-purple-500/40 border-t border-purple-500 rounded-t transition-all"
                     style={{ height: `${hPct}%` }}
@@ -263,7 +266,7 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
                   <div className="absolute -top-7 bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-[10px] font-mono text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     {d.count}
                   </div>
-                  <span className="text-[9px] font-mono text-zinc-500 whitespace-nowrap mt-1">{d.date}</span>
+                  <span className="absolute -bottom-6 text-[9px] font-mono text-zinc-500 whitespace-nowrap">{d.date}</span>
                 </div>
               );
             })}
@@ -306,9 +309,9 @@ export default function CampaignDetail({ params: paramsPromise }: { params: Prom
                       <td className="p-4 text-zinc-300">{imp.durationMs}ms</td>
                       <td className="p-4">
                         <span className={`inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase ${
-                          imp.status === 'claimed'
+                          ['claimed', 'anchored'].includes(imp.status.toLowerCase())
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : imp.status === 'rejected'
+                            : imp.status.toLowerCase() === 'rejected'
                             ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                             : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
                         }`}>
