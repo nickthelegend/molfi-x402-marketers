@@ -53,6 +53,7 @@ export default function NewCampaign() {
 
   // Tx/Deployment checklist state
   const [txStep, setTxStep] = useState<'idle' | 'uploading' | 'approving' | 'creating' | 'syncing' | 'success'>('idle');
+  const [syncMessage, setSyncMessage] = useState('Publishing targeting parameters and headers to indexer');
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -193,18 +194,46 @@ export default function NewCampaign() {
 
       // 4. Sync Metadata with Server
       setTxStep('syncing');
-      await syncCampaignMetadata(token, {
-        onchainId,
-        title,
-        ctaUrl,
-        targeting: {
-          surfaces,
-          models: modelHint ? modelHint.split(',').map(h => h.trim()).filter(Boolean) : undefined,
-        },
-        thumbnailCid: thumbnailCid || undefined,
-        durationMs,
-        contentCid: creativeCid,
-      });
+      setSyncMessage('Publishing targeting parameters and headers to indexer');
+
+      const maxRetries = 15;
+      const retryIntervalMs = 3000; // poll every 3 seconds (up to 45s total, daemon runs every 15s)
+      let synced = false;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          if (attempt > 1) {
+            setSyncMessage(`Waiting for block indexer (attempt ${attempt}/${maxRetries})...`);
+          }
+          await syncCampaignMetadata(token, {
+            onchainId,
+            title,
+            ctaUrl,
+            targeting: {
+              surfaces,
+              models: modelHint ? modelHint.split(',').map(h => h.trim()).filter(Boolean) : undefined,
+            },
+            thumbnailCid: thumbnailCid || undefined,
+            durationMs,
+            contentCid: creativeCid,
+          });
+          synced = true;
+          break;
+        } catch (err: any) {
+          const msg = (err.message || '').toLowerCase();
+          const isIndexerDelay = msg.includes('indexed') || msg.includes('retry') || msg.includes('404');
+          if (isIndexerDelay && attempt < maxRetries) {
+            console.log(`Campaign metadata sync attempt ${attempt} failed (not yet indexed). Retrying in ${retryIntervalMs / 1000}s...`);
+            await new Promise((resolve) => setTimeout(resolve, retryIntervalMs));
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      if (!synced) {
+        throw new Error('Campaign indexing timed out. Please try again.');
+      }
 
       setTxStep('success');
       setTimeout(() => {
@@ -289,7 +318,7 @@ export default function NewCampaign() {
               </div>
               <div>
                 <div className="text-text font-bold">4. Syncing Campaign Metadata</div>
-                <div className="text-[10px] text-text-muted font-normal mt-0.5">Publishing targeting parameters and headers to indexer</div>
+                <div className="text-[10px] text-text-muted font-normal mt-0.5">{syncMessage}</div>
               </div>
             </div>
           </div>

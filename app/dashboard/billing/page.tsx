@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useMarketerStore } from '../../../store/marketerStore';
-import { apiRequest, withdrawBalance, fetchLedger } from '../../../lib/api';
+import { apiRequest, withdrawBalance, fetchLedger, fetchProfile } from '../../../lib/api';
 import { useWalletClient, useAccount } from 'wagmi';
 import { useTxModal } from '../../../components/tx/TxModalProvider';
 import { keccak256, stringToHex } from 'viem';
@@ -31,6 +31,9 @@ export default function Billing() {
     try {
       const res = await fetchLedger(token);
       setLedger(res.ledger || []);
+
+      const profile = await fetchProfile(token);
+      setBalance(profile.balanceUsdc);
     } catch (err) {
       console.error(err);
     } finally {
@@ -60,7 +63,7 @@ export default function Billing() {
       }
 
       // Step 1: Hit topup endpoint without payment header to get HTTP 402 rejects schema
-      const res = await apiRequest('/v1/marketers/billing/topup', 'POST', { amountUsdc: amount.toFixed(6) }, token);
+      const res = await apiRequest('/v1/marketers/billing/topup-quote', 'POST', { amountUsdc: amount.toFixed(6) }, token);
       
       if (res.status !== 402) {
         throw new Error('Expected HTTP 402 Payment Required redirect.');
